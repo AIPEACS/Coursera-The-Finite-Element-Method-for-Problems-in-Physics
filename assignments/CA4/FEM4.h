@@ -1,9 +1,4 @@
-/*This is a template file for use with 3D finite elements.
-  The portions of the code you need to fill in are marked with the comment "//EDIT".
 
-  Do not change the name of any existing functions, but feel free
-  to create additional functions, variables, and constants.
-  It uses the deal.II FEM library.*/
 
 //Include files
 //Data structures and solvers
@@ -27,7 +22,6 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
-//Finite element implementation classes
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_q.h>
@@ -39,8 +33,6 @@
 #include <math.h>
 using namespace dealii;
 
-//Define the order of the basis functions (Lagrange polynomials)
-//and the order of the quadrature rule globally
 const unsigned int order = 1;
 const unsigned int quadRule = 2;
 
@@ -49,7 +41,7 @@ class FEM
 {
  public:
   //Class functions
-  FEM (double Alpha); // Class constructor 
+  FEM (double Alpha); // Class constructor
   ~FEM(); //Class destructor
 
   //Solution steps
@@ -64,7 +56,6 @@ class FEM
   void output_steady_results();
   void output_trans_results(unsigned int index);
 
-  //Calculate the l2norm of the difference between the steady state and transient solution
   double l2norm();
 
   //Class objects
@@ -85,13 +76,12 @@ class FEM
 
   std::vector<double> l2norm_results; //A vector to store the l2norms calculated in the time loop in solve_trans()
   double	      alpha; 	      //Specifies the Euler method, 0 <= alpha <= 1
-    
+
   //solution name array
   std::vector<std::string> nodal_solution_names;
   std::vector<DataComponentInterpretation::DataComponentInterpretation> nodal_data_component_interpretation;
 };
 
-// Class constructor for a scalar field
 template <int dim>
 FEM<dim>::FEM (double Alpha)
 :
@@ -109,11 +99,9 @@ fe (FE_Q<dim>(order), 1),
 template <int dim>
 FEM<dim>::~FEM (){dof_handler.clear ();}
 
-//Define the problem domain and generate the mesh
 template <int dim>
 void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
 
-  //Define the limits of your domain
   double x_min = 0.,
     x_max = 1.,
     y_min = 0.,
@@ -126,26 +114,13 @@ void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
   GridGenerator::subdivided_hyper_rectangle (triangulation, numberOfElements, min, max);
 }
 
-//Specify the Dirichlet boundary conditions
 template <int dim>
 void FEM<dim>::define_boundary_conds(){
 
   boundary_values_of_D.clear();
   boundary_values_of_V.clear();
-	
-  /*Note: this will be very similiar to the define_boundary_conds function
-    in the HW2 template. You will loop over all nodes and use "nodeLocations"
-    to check if the node is on the boundary with a Dirichlet condition. If it is,
-    then add the node number and the specified value
-    to the boundary values map, something like this:
 
-    boundary_values_of_D[globalNodeIndex] = dirichletTemperatureValue
-    boundary_values_of_V[globalNodeIndex] = dirichletTemperatureTimeDerivative
 
-    Note that there are boundary conditions on temperature and on the time derivative of temperature.
-    "nodeLocation" is a Table. The row index is
-    the global node number; the column index refers to the x, y, or z component (0, 1, or 2 for 3D).
-    e.g. nodeLocation[7][2] is the z coordinate of global node 7*/
 
   const unsigned int totalNodes = dof_handler.n_dofs(); //Total number of nodes
   for (unsigned int node=0; node<totalNodes; ++node) {
@@ -160,14 +135,11 @@ void FEM<dim>::define_boundary_conds(){
 
 }
 
-//Setup data structures (sparse matrix, vectors)
 template <int dim>
 void FEM<dim>::setup_system(){
 
-  //Let deal.II organize degrees of freedom
   dof_handler.distribute_dofs (fe);
 
-  //Fill in the Table "nodeLocations" with the x, y, and z coordinates of each node by its global index
   MappingQ1<dim,dim> mapping;
   std::vector< Point<dim,double> > dof_coords(dof_handler.n_dofs());
   nodeLocation.reinit(dof_handler.n_dofs(),dim);
@@ -178,10 +150,8 @@ void FEM<dim>::setup_system(){
     }
   }
 
-  //Specify boundary condtions (call the function)
   define_boundary_conds();
 
-  //Define the size of the global matrices and vectors
   sparsity_pattern.reinit (dof_handler.n_dofs(),
 			   dof_handler.n_dofs(),
 			   dof_handler.max_couplings_between_dofs());
@@ -198,10 +168,9 @@ void FEM<dim>::setup_system(){
 
   //Just some notes...
   std::cout << "   Number of active elems:       " << triangulation.n_active_cells() << std::endl;
-  std::cout << "   Number of degrees of freedom: " << dof_handler.n_dofs() << std::endl;   
+  std::cout << "   Number of degrees of freedom: " << dof_handler.n_dofs() << std::endl;
 }
 
-//Form elmental vectors and matrices and assemble to the global vector (F) and matrix (K)
 template <int dim>
 void FEM<dim>::assemble_system(){
 
@@ -209,8 +178,8 @@ void FEM<dim>::assemble_system(){
 
   FEValues<dim> fe_values(fe,
 			  quadrature_formula,
-			  update_values | 
-			  update_gradients | 
+			  update_values |
+			  update_gradients |
 			  update_JxW_values);
 
   const unsigned int dofs_per_elem = fe.dofs_per_cell;         //This gives you dofs per element
@@ -222,25 +191,18 @@ void FEM<dim>::assemble_system(){
   std::vector<unsigned int> local_dof_indices (dofs_per_elem); //This relates local dof numbering to global dof numbering
   const double rho = 3.8151e6;
 
-  //loop over elements  
+  //loop over elements
   typename DoFHandler<dim>::active_cell_iterator elem = dof_handler.begin_active (),
     endc = dof_handler.end();
   for (;elem!=endc; ++elem){
 
-    //Retrieve the effective "connectivity matrix" for this element
     elem->get_dof_indices (local_dof_indices);
 
     fe_values.reinit(elem); //Retrieve values from current element
-    /*FEValues will give you the basis functions, gradients, jacobian, etc. that you need at each quad point,
-      just as in HW4:
-      Basis function value with: fe_values.shape_value(element_dof_number,quad_point_number);
-      Basis function gradient with: fe_values.shape_grad(element_dof_number,quad_point_number)[component];
-      (again, this is the gradient with respect to the real (not bi-unit) domain)
-      Determinant of the Jacobian times the quadrature weight with: fe_values.JxW(quad_point_number);*/
+
 
     elem->get_dof_indices (local_dof_indices);
 
-    //Loop over local DOFs and quadrature points to populate Mlocal
     Mlocal = 0.;
     for(unsigned int q=0; q<num_quad_pts; q++){
       for(unsigned int A=0; A<fe.dofs_per_cell; A++){
@@ -256,7 +218,6 @@ void FEM<dim>::assemble_system(){
     kappa[1][1] = 385.;
     kappa[2][2] = 385.;
 
-    //Loop over local DOFs and quadrature points to populate Klocal
     Klocal = 0.;
     for(unsigned int A=0; A<fe.dofs_per_cell; A++){
       for(unsigned int B=0; B<fe.dofs_per_cell; B++){
@@ -284,8 +245,6 @@ void FEM<dim>::assemble_system(){
 template <int dim>
 void FEM<dim>::solve_steady(){
 
-  //Note that I'm applying boundary conditions within each solve function
-  //Let deal.II apply Dirichlet conditions
   system_matrix.copy_from(K);
   RHS = F;
   MatrixTools::apply_boundary_values (boundary_values_of_D, system_matrix, D_steady, RHS, false);
@@ -295,16 +254,13 @@ void FEM<dim>::solve_steady(){
   A.initialize(system_matrix);
   A.vmult (D_steady, RHS);
 
-  //Call output results directly from the solve functions
   output_steady_results();
 }
 
-//Apply initial conditions for the transient problem
 template <int dim>
 void FEM<dim>::apply_initial_conditions(){
 
-  /*Loop over global nodes. Use nodeLocation to determine the position of the node
-    and specify the correct initial temperature value in D_trans.*/
+
 
   const unsigned int totalNodes = dof_handler.n_dofs(); //Total number of nodes
 
@@ -317,16 +273,13 @@ void FEM<dim>::apply_initial_conditions(){
     }
   }
 
-  //Find V_0 = M^{-1}*(F_0 - K*D_0)
   system_matrix.copy_from(M); //system_matrix = M
 
-  //We need to define the right-hand-side vector (RHS = F_0 - K*D_0) step by step...
   K.vmult(RHS,D_trans); //RHS = K*D_trans
   RHS *= -1.; 		//RHS = -1.*RHS = -K*D_trans
   RHS.add(1.,F); 	//RHS = RHS + 1.*F = F - K*D_trans
   MatrixTools::apply_boundary_values (boundary_values_of_V, system_matrix, V_trans, RHS, false);
 
-  //Solve for solution in system_matrix*V_trans = RHS
   SparseDirectUMFPACK  A;
   A.initialize(system_matrix);
   A.vmult (V_trans, RHS); //V_trans=system_matrix^{-1}*RHS
@@ -343,59 +296,38 @@ void FEM<dim>::apply_initial_conditions(){
 template <int dim>
 void FEM<dim>::solve_trans(){
 
-  //Call the function to initialize D_trans and V_trans as D_0 and V_0
   apply_initial_conditions();
 
-  //Define delta_t (leave at 1. when you turn in your assignment)
   const double delta_t = 1.;
 
   const unsigned int totalNodes = dof_handler.n_dofs(); //Total number of nodes
   Vector<double>     D_tilde(totalNodes);
 
-  //Loop over time steps. For each time step, update D_transient from D_n to D_{n+1} using the V method
   for(unsigned int t_step=1; t_step<3001; t_step++){
-	
-    /*SparseMatrix and Vector operations in deal.II:
-      To add a matrix with a coefficient to system matrix, use system_matrix.add(coeffient,matrix)
-      To add a vector with a coefficient to RHS, use RHS.add(coefficient,vector)
-      To multiply a sparse matrix and a vector, for example RHS = K*D_tilde, use
-      K.vmult(RHS,D_tilde)
-      To set system_matrix equal to M, use system_matrix.copy_from(M)
-      To set RHS equal to F, use RHS = F
-      To set RHS equal to -RHS, use RHS *= -1
-      For some examples, look at the apply_initial_conditions() function*/
 
-    //Find D_tilde. Remember, at this point D_trans = D_n and V_trans = V_n
+
+
     D_tilde = D_trans;
     D_tilde.add((1. - alpha) * delta_t, V_trans);
 
-    /*Use D_tilde to update V_trans from V_n to V_{n+1}. This involves solving 
-      a matrix/vector system: system_matrix*Vtrans = RHS. You need to define
-      system_matrix and RHS to correctly solve for V_trans = V_{n+1} = system_matrix^{-1}*RHS*/
+
     system_matrix.copy_from(M);
     system_matrix.add(alpha * delta_t, K);
     K.vmult(RHS, D_tilde);
     RHS *= -1.;
     RHS.add(1., F);
 
-    //Apply boundary conditions on V_trans before solving the matrix/vector system
     MatrixTools::apply_boundary_values (boundary_values_of_V, system_matrix, V_trans, RHS, false);
 
-    //Solve for V_trans (V_{n+1}) in system_matrix*solution = RHS
     SparseDirectUMFPACK  A;
     A.initialize(system_matrix);
     A.vmult (V_trans, RHS); //V_trans=system_matrix^{-1}*RHS
 
-    /*To clarify, .vmult with a SparseDirectUMFPACK matrix (like A)
-      multiplies a vector by the matrix inverse,
-      but .vmult with a SparseMatrix (like K or M)
-      multiplies a vector by the matrix itself (non-inverted)*/
 
-    //Update D_trans to D_{n+1} using D_tilde and V_trans (V_{n+1})
+
     D_trans = D_tilde;
     D_trans.add(alpha * delta_t, V_trans);
 
-    //Output the results every 100 seconds
     if(t_step%100 == 0){
       output_trans_results(t_step);
 
@@ -405,7 +337,6 @@ void FEM<dim>::solve_trans(){
   }
 }
 
-//Output transient results for a given time step
 template <int dim>
 void FEM<dim>::output_steady_results (){
   //Write results to VTK file
@@ -417,10 +348,8 @@ void FEM<dim>::output_steady_results (){
   data_out.build_patches (); data_out.write_vtk (output1); output1.close();
 }
 
-//Output transient results for a given time step
 template <int dim>
 void FEM<dim>::output_trans_results (unsigned int index){
-  //This adds an index to your filename so that you can distinguish between time steps
 
   //Write results to VTK file
   char filename[100];
@@ -433,7 +362,6 @@ void FEM<dim>::output_trans_results (unsigned int index){
   data_out.build_patches (); data_out.write_vtk (output1); output1.close();
 }
 
-//Function to calculate the l2norm of the difference between the current and steady state solutions.
 template <int dim>
 double FEM<dim>::l2norm(){
   double l2norm = 0.;
@@ -448,8 +376,8 @@ double FEM<dim>::l2norm(){
   const unsigned int 				num_quad_pts = quadrature_formula.size(); //Total number of quad points in the element
   double 										u_steady, u_trans;
 
-  //loop over elements  
-  typename DoFHandler<dim>::active_cell_iterator elem = dof_handler.begin_active (), 
+  //loop over elements
+  typename DoFHandler<dim>::active_cell_iterator elem = dof_handler.begin_active (),
     endc = dof_handler.end();
   for (;elem!=endc; ++elem){
     elem->get_dof_indices (local_dof_indices);
@@ -465,8 +393,7 @@ double FEM<dim>::l2norm(){
     }
 
   }
-	
-  //The l2norm is the square root of the integral of (u_steady - u_trans)^2, using D_steady and D_trans
+
 
   return sqrt(l2norm);
 }
