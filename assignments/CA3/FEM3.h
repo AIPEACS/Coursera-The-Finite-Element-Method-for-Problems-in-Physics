@@ -23,7 +23,6 @@
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
-#include <deal.II/grid/tria_boundary_lib.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -112,8 +111,8 @@ template <int dim>
 double FEM<dim>::C(unsigned int i,unsigned int j,unsigned int k,unsigned int l){
 
   //Define the material parameters of Young's modulus and Poisson's ratio
-  double E= ,  //EDIT
-    nu= ; //EDIT
+  double E=2.0e11,
+    nu=0.3;
   double lambda=(E*nu)/((1.+nu)*(1.-2.*nu)),
     mu=E/(2.*(1.+nu));
 
@@ -126,12 +125,12 @@ template <int dim>
 void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
 
   //Define the limits of your domain
-  double x_min = , //EDIT
-    x_max = , //EDIT
-    y_min = , //EDIT
-    y_max = , //EDIT
-    z_min = , //EDIT
-    z_max = ; //EDIT
+  double x_min = 0.,
+    x_max = 1.,
+    y_min = 0.,
+    y_max = 1.,
+    z_min = 0.,
+    z_max = 1.;
 
   Point<dim,double> min(x_min,y_min,z_min),
     max(x_max,y_max,z_max);
@@ -142,7 +141,7 @@ void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
 template <int dim>
 void FEM<dim>::define_boundary_conds(){
 
-  //EDIT - Define the Dirichlet boundary conditions.
+  boundary_values.clear();
 	
   /*Note: this will be very similiar to the define_boundary_conds function
     in the HW2 template. You will loop over all degrees of freedom and use "dofLocation"
@@ -168,6 +167,9 @@ void FEM<dim>::define_boundary_conds(){
     e.g. dofLocation[7][2] is the z-coordinate of global dof 7*/
 
   const unsigned int totalDOFs = dof_handler.n_dofs(); //Total number of degrees of freedom
+  for (unsigned int dof=0; dof<totalDOFs; ++dof)
+    if (std::abs(dofLocation[dof][2]) < 1.e-12)
+      boundary_values[dof] = 0.;
 }
 
 //Setup data structures (sparse matrix, vectors)
@@ -232,7 +234,6 @@ void FEM<dim>::assemble_system(){
   K=0; F=0;
 
   const unsigned int dofs_per_elem = fe.dofs_per_cell;                      //This gives you dofs per element
-  const unsigned int nodes_per_elem = GeometryInfo<dim>::vertices_per_cell;
   const unsigned int num_quad_pts = quadrature_formula.size();              //Total number of quad points in the element
   const unsigned int num_face_quad_pts = face_quadrature_formula.size();    //Total number of quad points in the face
   const unsigned int faces_per_elem = GeometryInfo<dim>::faces_per_cell;
@@ -256,28 +257,18 @@ void FEM<dim>::assemble_system(){
       and populate F_assembly and K_assembly using local_dof_indices to relate local and global DOFs.*/
     Klocal = 0.;
 
-    //Loop over local DOFs and quadrature points to populate Klocal
-    //Note that all quadrature points are included in this single loop
+    //Use FESystem's component map instead of assuming a local DOF ordering.
     for (unsigned int q=0; q<num_quad_pts; ++q){
       //evaluate elemental stiffness matrix, K^{AB}_{ik} = \integral N^A_{,j}*C_{ijkl}*N^B_{,l} dV 
-      for (unsigned int A=0; A<nodes_per_elem; A++) { //Loop over nodes
-	for(unsigned int i=0; i<dim; i++){ //Loop over nodal dofs
-	  for (unsigned int B=0; B<nodes_per_elem; B++) {
-	    for(unsigned int k=0; k<dim; k++){
-	      for (unsigned int j = 0; j<dim; j++){
-		for (unsigned int l = 0; l<dim; l++){
-		  /*//EDIT - You need to define Klocal here. Note that the indices of Klocal are the element dof numbers (0 through 23),
-		    which you can caluclate from the element node numbers (0 through 8) and the nodal dofs (0 through 2).
-		    You'll need the following information:
-		    basis gradient vector: fe_values.shape_grad(elementDOF,q), where elementDOF is dim*A+i or dim*B+k
-		    NOTE: this is the gradient with respect to the real domain (not the bi-unit domain)
-		    elasticity tensor: use the function C(i,j,k,l)
-		    det(J) times the total quadrature weight: fe_values.JxW(q)*/
-		}
-	      }
-	    }
-	  }
-	}
+      for (unsigned int a=0; a<dofs_per_elem; ++a) {
+        const unsigned int i = fe.system_to_component_index(a).first;
+        for (unsigned int b=0; b<dofs_per_elem; ++b) {
+          const unsigned int k = fe.system_to_component_index(b).first;
+          for (unsigned int j=0; j<dim; ++j)
+            for (unsigned int l=0; l<dim; ++l)
+              Klocal[a][b] += fe_values.shape_grad(a,q)[j] * C(i,j,k,l) *
+                              fe_values.shape_grad(b,q)[l] * fe_values.JxW(q);
+        }
       }
     }
 
@@ -294,31 +285,28 @@ void FEM<dim>::assemble_system(){
       fe_face_values.reinit (elem, f);
       /*elem->face(f)->center() gives a position vector (in the real domain) of the center point on face f
 	of the current element. We can use it to see if we are at the Neumann boundary, x_3 = 1.*/
-      if(elem->face(f)->center()[2] == 1){
+      if(elem->face(f)->at_boundary() &&
+         std::abs(elem->face(f)->center()[2] - 1.) < 1.e-12){
 	//To integrate over this face, loop over all face quadrature points with this single loop
 	for (unsigned int q=0; q<num_face_quad_pts; ++q){
 	  double x = fe_face_values.quadrature_point(q)[0]; //x-coordinate at the current surface quad. point
-	  //EDIT - define the value of the traction vector, h
-	  for (unsigned int A=0; A<nodes_per_elem; A++){ //loop over all element nodes
-	    for(unsigned int i=0; i<dim; i++){ //loop over nodal dofs
-	      /*//EDIT - define Flocal. Again, the indices of Flocal are the element dof numbers (0 through 23).
-		Evaluate the basis functions using the elementDOF: fe_face_values.shape_value(elementDOF,q)
-
-		Note that we are looping over all element dofs, not just those on the Neumann face. However,
-		the face quadrature points are only on the Neumann face, so we are indeed doing a surface integral.
-
-		For det(J) times the total quadrature weight: fe_face_values.JxW(q)*/
-	    }
-	  }
+	  h[0] = 0.;
+          h[1] = 0.;
+          h[2] = 1.e9 * x;
+          for (unsigned int a=0; a<dofs_per_elem; ++a){
+            const unsigned int component = fe.system_to_component_index(a).first;
+            Flocal[a] += fe_face_values.shape_value(a,q) * h[component] *
+                         fe_face_values.JxW(q);
+          }
 	}
       }
     }
 
     //Assemble local K and F into global K and F
     for(unsigned int i=0; i<dofs_per_elem; i++){
-      //EDIT - Assemble F from Flocal (you can look at HW2)
+      F[local_dof_indices[i]] += Flocal[i];
       for(unsigned int j=0; j<dofs_per_elem; j++){
-	//EDIT - Assemble K from Klocal (you can look at HW2)
+	K.add(local_dof_indices[i], local_dof_indices[j], Klocal[i][j]);
       }
     }
   }

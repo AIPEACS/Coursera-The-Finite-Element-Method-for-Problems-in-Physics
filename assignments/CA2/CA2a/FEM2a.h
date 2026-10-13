@@ -23,7 +23,6 @@
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
-#include <deal.II/grid/tria_boundary_lib.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -114,7 +113,9 @@ double FEM<dim>::basis_function(unsigned int node, double xi_1, double xi_2){
 
   double value = 0.; //Store the value of the basis function in this variable
 
-  //EDIT
+  const double sx = (node % 2 == 0) ? -1. : 1.;
+  const double sy = (node < 2) ? -1. : 1.;
+  value = 0.25 * (1. + sx*xi_1) * (1. + sy*xi_2);
 
   return value;
 }
@@ -129,7 +130,10 @@ std::vector<double> FEM<dim>::basis_gradient(unsigned int node, double xi_1, dou
 
   std::vector<double> values(dim,0.0); //Store the value of the gradient of the basis function in this variable
 
-  //EDIT
+  const double sx = (node % 2 == 0) ? -1. : 1.;
+  const double sy = (node < 2) ? -1. : 1.;
+  values[0] = 0.25 * sx * (1. + sy*xi_2);
+  values[1] = 0.25 * sy * (1. + sx*xi_1);
 
   return values;
 }
@@ -139,10 +143,10 @@ template <int dim>
 void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
 
   //Define the limits of your domain
-  double x_min = , //EDIT - define the left limit of the domain, etc.
-    x_max = , //EDIT
-    y_min = , //EDIT
-    y_max = ; //EDIT
+  double x_min = 0.,
+    x_max = 0.03,
+    y_min = 0.,
+    y_max = 0.08;
 
   Point<dim,double> min(x_min,y_min),
     max(x_max,y_max);
@@ -153,7 +157,7 @@ void FEM<dim>::generate_mesh(std::vector<unsigned int> numberOfElements){
 template <int dim>
 void FEM<dim>::define_boundary_conds(){
 
-  //EDIT - Define the Dirichlet boundary conditions.
+  boundary_values.clear();
 	
   /*Note: this will be very similiar to the define_boundary_conds function
     in the HW2 template. You will loop over all nodes and use "nodeLocations"
@@ -168,6 +172,14 @@ void FEM<dim>::define_boundary_conds(){
     e.g. nodeLocation[7][1] is the y coordinate of global node 7*/
 
   const unsigned int totalNodes = dof_handler.n_dofs(); //Total number of nodes
+  for (unsigned int node=0; node<totalNodes; ++node) {
+    const double x = nodeLocation[node][0];
+    const double y = nodeLocation[node][1];
+    if (std::abs(y) < 1.e-12)
+      boundary_values[node] = 300. * (1. + 31. * x);
+    else if (std::abs(y - 0.08) < 1.e-12)
+      boundary_values[node] = 310. * (1. + 8. * x*x);
+  }
 }
 
 //Setup data structures (sparse matrix, vectors)
@@ -201,14 +213,14 @@ void FEM<dim>::setup_system(){
   D.reinit (dof_handler.n_dofs());
 
   //Define quadrature rule - again, you decide what quad rule is needed
-  quadRule = 2; //EDIT - Number of quadrature points along one dimension
+  quadRule = 2;
   quad_points.resize(quadRule); quad_weight.resize(quadRule);
 
-  quad_points[0] = -sqrt(1./3.); //EDIT
-  quad_points[1] = sqrt(1./3.); //EDIT
+  quad_points[0] = -sqrt(1./3.);
+  quad_points[1] = sqrt(1./3.);
 
-  quad_weight[0] = 1.; //EDIT
-  quad_weight[1] = 1.; //EDIT
+  quad_weight[0] = 1.;
+  quad_weight[1] = 1.;
 
   //Just some notes...
   std::cout << "   Number of active elems:       " << triangulation.n_active_cells() << std::endl;
@@ -290,7 +302,7 @@ void FEM<dim>::assemble_system(){
 	      for(unsigned int j=0;j<dim;j++){
 		for(unsigned int I=0;I<dim;I++){
 		  for(unsigned int J=0;J<dim;J++){
-		    //EDIT - Define Klocal. You will need to use the inverse Jacobian ("invJacob") and "detJ"
+		    Klocal[A][B] += basis_gradient(A,quad_points[q1],quad_points[q2])[I] * invJacob[I][i] * kappa[i][j] * basis_gradient(B,quad_points[q1],quad_points[q2])[J] * invJacob[J][j] * detJ * quad_weight[q1] * quad_weight[q2];
 		  }
 		}
 	      }
@@ -304,14 +316,14 @@ void FEM<dim>::assemble_system(){
     for(unsigned int A=0; A<dofs_per_elem; A++){
       //You would assemble F here if it were nonzero.
       for(unsigned int B=0; B<dofs_per_elem; B++){
-	//EDIT - Assemble K from Klocal (you can look at HW2)
+	K.add(local_dof_indices[A], local_dof_indices[B], Klocal[A][B]);
       }
     }
 
   }
 
   //Apply Dirichlet boundary conditions
-  MatrixTools::apply_boundary_values (boundary_values, K, D, F, false);
+  MatrixTools::apply_boundary_values (boundary_values, K, D, F, true);
 }
 
 //Solve for D in KD=F

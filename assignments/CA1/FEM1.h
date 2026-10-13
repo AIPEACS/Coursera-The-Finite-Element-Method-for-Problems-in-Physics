@@ -23,7 +23,6 @@
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
-#include <deal.II/grid/tria_boundary_lib.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -131,7 +130,10 @@ double FEM<dim>::xi_at_node(unsigned int dealNode){
     xi = 1.;
   }
   else if(dealNode <= basisFunctionOrder){
-    xi = -1. + 2.*(dealNode-1.)/basisFunctionOrder;
+    if (basisFunctionOrder == 3)
+      xi = (dealNode == 2 ? -1. : 1.) / sqrt(5.);
+    else
+      xi = -1. + 2.*(dealNode-1.)/basisFunctionOrder;
   }
   else{
     std::cout << "Error: you input node number "
@@ -156,7 +158,10 @@ double FEM<dim>::basis_function(unsigned int node, double xi){
   /*You can use the function "xi_at_node" (defined above) to get the value of xi (in the bi-unit domain)
     at any node in the element - using deal.II's element node numbering pattern.*/
 
-  //EDIT
+  const double xi_node = xi_at_node(node);
+  for (unsigned int other = 0; other <= basisFunctionOrder; ++other)
+    if (other != node)
+      value *= (xi - xi_at_node(other)) / (xi_node - xi_at_node(other));
 
   return value;
 }
@@ -175,7 +180,15 @@ double FEM<dim>::basis_gradient(unsigned int node, double xi){
   /*You can use the function "xi_at_node" (defined above) to get the value of xi (in the bi-unit domain)
     at any node in the element - using deal.II's element node numbering pattern.*/
 
-  //EDIT
+  for (unsigned int omitted = 0; omitted <= basisFunctionOrder; ++omitted)
+    if (omitted != node) {
+      double term = 1. / (xi_at_node(node) - xi_at_node(omitted));
+      for (unsigned int other = 0; other <= basisFunctionOrder; ++other)
+        if (other != node && other != omitted)
+          term *= (xi - xi_at_node(other)) /
+                  (xi_at_node(node) - xi_at_node(other));
+      value += term;
+    }
 
   return value;
 }
@@ -185,7 +198,7 @@ template <int dim>
 void FEM<dim>::generate_mesh(unsigned int numberOfElements){
 
   //Define the limits of your domain
-  L = ; //EDIT
+  L = 0.1;
   double x_min = 0.;
   double x_max = L;
 
@@ -229,7 +242,7 @@ template <int dim>
 void FEM<dim>::setup_system(){
 
   //Define constants for problem (Dirichlet boundary values)
-  g1 = ; g2 = ; //EDIT
+  g1 = 0.; g2 = 0.001;
 
   //Let deal.II organize degrees of freedom
   dof_handler.distribute_dofs (fe);
@@ -258,14 +271,17 @@ void FEM<dim>::setup_system(){
   //Define quadrature rule
   /*A quad rule of 2 is included here as an example. You will need to decide
     what quadrature rule is needed for the given problems*/
-  quadRule = 2; //EDIT - Number of quadrature points along one dimension
+  quadRule = 4;
   quad_points.resize(quadRule); quad_weight.resize(quadRule);
 
-  quad_points[0] = -sqrt(1./3.); //EDIT
-  quad_points[1] = sqrt(1./3.); //EDIT
-
-  quad_weight[0] = 1.; //EDIT
-  quad_weight[1] = 1.; //EDIT
+  quad_points[0] = -0.8611363115940526;
+  quad_points[1] = -0.3399810435848563;
+  quad_points[2] =  0.3399810435848563;
+  quad_points[3] =  0.8611363115940526;
+  quad_weight[0] = 0.3478548451374538;
+  quad_weight[1] = 0.6521451548625461;
+  quad_weight[2] = 0.6521451548625461;
+  quad_weight[3] = 0.3478548451374538;
 
   //Just some notes...
   std::cout << "   Number of active elems:       " << triangulation.n_active_cells() << std::endl;
@@ -282,7 +298,7 @@ void FEM<dim>::assemble_system(){
   FullMatrix<double> 				Klocal (dofs_per_elem, dofs_per_elem);
   Vector<double>      			Flocal (dofs_per_elem);
   std::vector<unsigned int> local_dof_indices (dofs_per_elem);
-  double										h_e, x, f;
+  double										h_e, x;
 
   //loop over elements  
   typename DoFHandler<dim>::active_cell_iterator elem = dof_handler.begin_active(), 
@@ -309,13 +325,16 @@ void FEM<dim>::assemble_system(){
 	for(unsigned int B=0; B<dofs_per_elem; B++){
 	  x += nodeLocation[local_dof_indices[B]]*basis_function(B,quad_points[q]);
 	}
-	//EDIT - Define Flocal.
+        const double force_per_length = 1.e11 * x * 1.e-4;
+        Flocal[A] += force_per_length * basis_function(A, quad_points[q]) *
+                     (h_e / 2.) * quad_weight[q];
       }
     }
     //Add nonzero Neumann condition, if applicable
     if(prob == 2){ 
       if(nodeLocation[local_dof_indices[1]] == L){
-	//EDIT - Modify Flocal to include the traction on the right boundary.
+        for (unsigned int A=0; A<dofs_per_elem; ++A)
+          Flocal[A] += 1.e6 * basis_function(A, 1.);
       }
     }
 
@@ -324,7 +343,9 @@ void FEM<dim>::assemble_system(){
     for(unsigned int A=0; A<dofs_per_elem; A++){
       for(unsigned int B=0; B<dofs_per_elem; B++){
 	for(unsigned int q=0; q<quadRule; q++){
-	  //EDIT - Define Klocal.
+          const double grad_A = basis_gradient(A, quad_points[q]) * 2. / h_e;
+          const double grad_B = basis_gradient(B, quad_points[q]) * 2. / h_e;
+          Klocal[A][B] += 1.e7 * grad_A * grad_B * (h_e / 2.) * quad_weight[q];
 	}
       }
     }
@@ -332,11 +353,11 @@ void FEM<dim>::assemble_system(){
     //Assemble local K and F into global K and F
     //You will need to used local_dof_indices[A]
     for(unsigned int A=0; A<dofs_per_elem; A++){
-      //EDIT - add component A of Flocal to the correct location in F
+      F[local_dof_indices[A]] += Flocal[A];
       /*Remember, local_dof_indices[A] is the global degree-of-freedom number
 	corresponding to element node number A*/
       for(unsigned int B=0; B<dofs_per_elem; B++){
-	//EDIT - add component A,B of Klocal to the correct location in K (using local_dof_indices)
+        K.add(local_dof_indices[A], local_dof_indices[B], Klocal[A][B]);
 	/*Note: K is a sparse matrix, so you need to use the function "add".
 	  For example, to add the variable C to K[i][j], you would use:
 	  K.add(i,j,C);*/
@@ -407,8 +428,11 @@ double FEM<dim>::l2norm_of_error(){
 	x += nodeLocation[local_dof_indices[B]]*basis_function(B,quad_points[q]);
 	u_h += D[local_dof_indices[B]]*basis_function(B,quad_points[q]);
       }
-      //EDIT - Find the l2-norm of the error through numerical integration.
-      /*This includes evaluating the exact solution at the quadrature points*/
+      if (prob == 1)
+        u_exact = -x*x*x/6. + ((g2-g1)/L + L*L/6.)*x + g1;
+      else
+        u_exact = -x*x*x/6. + (1.e6/1.e7 + L*L/2.)*x + g1;
+      l2norm += (u_exact-u_h)*(u_exact-u_h) * (h_e/2.) * quad_weight[q];
 							
     }
   }
