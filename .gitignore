@@ -1,0 +1,5 @@
+/build/
+**/compile_commands.json
+**/*.h5
+**/solution*.vtk
+!**/reference/solution*.vtk
