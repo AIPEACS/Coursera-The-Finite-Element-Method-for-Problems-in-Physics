@@ -13,6 +13,8 @@ These independently written summaries describe the four tasks without redistribu
 
 ## Required Coursera zip contents
 
+Download the corrected [CA1.zip from v1.0.1](https://github.com/AIPEACS/Coursera-The-Finite-Element-Method-for-Problems-in-Physics/releases/download/v1.0.1/CA1.zip) and upload it unchanged to Coursera. CA2, CA3, and CA4 remain unchanged in the v1.0.0 release.
+
 Create one zip per assignment and include only the listed files:
 
 | Zip | Files to include |

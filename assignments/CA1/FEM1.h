@@ -84,7 +84,8 @@ class FEM
 template <int dim>
 FEM<dim>::FEM(unsigned int order,unsigned int problem)
 :
-fe (FE_Q<dim>(order), dim),
+// Two endpoint Lobatto points give the trapezoid rule on old and new deal.II.
+fe (FE_Q<dim>(QIterated<1>(QGaussLobatto<1>(2), order)), dim),
   dof_handler (triangulation)
 {
   basisFunctionOrder = order;
@@ -119,10 +120,7 @@ double FEM<dim>::xi_at_node(unsigned int dealNode){
     xi = 1.;
   }
   else if(dealNode <= basisFunctionOrder){
-    if (basisFunctionOrder == 3)
-      xi = (dealNode == 2 ? -1. : 1.) / sqrt(5.);
-    else
-      xi = -1. + 2.*(dealNode-1.)/basisFunctionOrder;
+    xi = -1. + 2.*(dealNode-1.)/basisFunctionOrder;
   }
   else{
     std::cout << "Error: you input node number "
